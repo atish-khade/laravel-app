@@ -3,6 +3,7 @@ services:
     image: ${DOCKERHUB_USERNAME}/hrms-backend:latest
     container_name: hrms-backend
     restart: unless-stopped
+    env_file: .env # Reads from local host directory
     volumes:
       - hrms-public-assets:/var/www/public
     networks:

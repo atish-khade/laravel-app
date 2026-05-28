@@ -67,6 +67,7 @@ jobs:
           docker compose up -d --build
 
           # 7. Execute production optimizations inside the application container
+          docker exec hrms-backend php artisan key:generate --skip # Generates key ONLY if missing
           docker exec hrms-backend php artisan config:cache
           docker exec hrms-backend php artisan view:cache
           docker exec hrms-backend php artisan migrate --force
