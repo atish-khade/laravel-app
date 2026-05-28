@@ -29,11 +29,7 @@ services:
     image: mysql:8.0
     container_name: hrms-database
     restart: unless-stopped
-    environment:
-      MYSQL_DATABASE: hrms_production
-      MYSQL_USER: hrms_user
-      MYSQL_PASSWORD: ${DB_PASSWORD}          # Injected dynamically from pipeline memory
-      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD} # Injected dynamically from pipeline memory
+    env_file: .env
     volumes:
       - mysql-data:/var/lib/mysql
     networks:
