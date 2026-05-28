@@ -43,34 +43,23 @@ jobs:
         username: ${{ secrets.EC2_USERNAME }}
         key: ${{ secrets.SSH_PRIVATE_KEY }}
         script: |
-          # 1. Create a clean production infrastructure folder if it doesn't exist
           mkdir -p ~/hrms-production
           cd ~/hrms-production
 
-          # 2. Since we don't want to clone the whole source repo here, 
-          # we just pull the compose and config files directly from your GitHub main branch
           curl -sSL https://raw.githubusercontent.com/${{ github.repository }}/main/docker-compose.yml -o docker-compose.yml
           curl -sSL https://raw.githubusercontent.com/${{ github.repository }}/main/nginx.conf -o nginx.conf
 
-          # 3. Pull the fresh immutable image from DockerHub
           docker pull ${{ secrets.DOCKERHUB_USERNAME }}/hrms-backend:latest
 
-          # 4. Inject sensitive database secrets into runtime environment memory
-          export DB_PASSWORD="${{ secrets.PROD_DB_PASSWORD }}"
-          export DB_ROOT_PASSWORD="${{ secrets.PROD_DB_ROOT_PASSWORD }}"
           export DOCKERHUB_USERNAME="${{ secrets.DOCKERHUB_USERNAME }}"
 
-          # 5. Bring down containers and drop the temporary asset volume to clear old assets
           docker compose down
-
-          # 6. Fire up the fresh immutable image layers
           docker compose up -d --build
 
-          # 7. Execute production optimizations inside the application container
+          # 1. Generate application encryption key if missing
           docker exec hrms-backend php artisan key:generate --no-interaction
-          docker exec hrms-backend php artisan config:cache
-          docker exec hrms-backend php artisan view:cache
 
+          # 2. Production health verification loop (Wait for MySQL to accept connections)
           echo "Waiting for MySQL container to become fully responsive..."
           for i in {1..30}; do
             if docker exec hrms-database mysqladmin ping -u hrms_user --password="Hi@laravelApp@316$" --silent; then
@@ -81,4 +70,10 @@ jobs:
             sleep 3
           done
 
+          # 3. RUN MIGRATIONS FIRST (This creates the cache table and all app tables)
           docker exec hrms-backend php artisan migrate --force
+
+          # 4. Now optimize and clear cache safely since the tables exist!
+          docker exec hrms-backend php artisan config:cache
+          docker exec hrms-backend php artisan view:cache
+          docker exec hrms-backend php artisan cache:clear
