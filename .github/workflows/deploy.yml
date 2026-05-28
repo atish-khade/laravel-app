@@ -70,5 +70,15 @@ jobs:
           docker exec hrms-backend php artisan key:generate --no-interaction
           docker exec hrms-backend php artisan config:cache
           docker exec hrms-backend php artisan view:cache
-          sleep 10
+
+          echo "Waiting for MySQL container to become fully responsive..."
+          for i in {1..30}; do
+            if docker exec hrms-database mysqladmin ping -u hrms_user --password="Hi@laravelApp@316$" --silent; then
+              echo "MySQL is alive and accepting structural schemas!"
+              break
+            fi
+            echo "Database port binding initialized, waiting for engine startup loop ($i/30)..."
+            sleep 3
+          done
+
           docker exec hrms-backend php artisan migrate --force
