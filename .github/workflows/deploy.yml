@@ -1,0 +1,68 @@
+name: Production CI/CD Pipeline
+
+on:
+  push:
+    branches: [ "main" ] # Triggers automatically when you push to main
+
+jobs:
+  build-and-push:
+    name: Build Immutable Docker Images
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout Source Code
+      uses: actions/checkout@v4
+
+    - name: Log in to Docker Hub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+    # Builds the Laravel backend, executing 'composer install' inside the container layer
+    - name: Build & Push Backend Image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./Dockerfile
+        push: true
+        tags: |
+          ${{ secrets.DOCKERHUB_USERNAME }}/hrms-backend:latest
+          ${{ secrets.DOCKERHUB_USERNAME }}/hrms-backend:${{ github.sha }}
+
+  deploy-to-production:
+    name: Continuous Delivery Execution
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Execute Remote Deployment via SSH
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ${{ secrets.EC2_USERNAME }}
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
+        script: |
+          # 1. Step into the deployment infrastructure directory
+          cd ~/hrms-app
+          
+          # 2. Sync the repository configurations (like compose manifests and nginx.conf updates)
+          git pull origin main
+          
+          # 3. Pull the fresh immutable images from DockerHub
+          docker pull ${{ secrets.DOCKERHUB_USERNAME }}/hrms-backend:latest
+          
+          # 4. Inject sensitive database secrets into runtime environment memory
+          export DB_PASSWORD="${{ secrets.PROD_DB_PASSWORD }}"
+          export DB_ROOT_PASSWORD="${{ secrets.PROD_DB_ROOT_PASSWORD }}"
+          
+          # 5. Bring down the containers and drop the asset volume to clear old cached frontend files
+          docker compose down
+          
+          # 6. Fire up the fresh immutable image layers
+          docker compose up -d --build
+          
+          # 7. Execute production optimizations inside the self-contained app layer
+          docker exec hrms-backend php artisan config:cache
+          docker exec hrms-backend php artisan view:cache
+          docker exec hrms-backend php artisan migrate --force
